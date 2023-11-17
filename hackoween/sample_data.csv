@@ -1,0 +1,383 @@
+instruction,input,output
+"In Lexer OpsData Pyspark transform codes, import all the required libraries used in Lexer DataOps transfrom. The libraries are pyspark, data toolkit, typing, and others.",,"# IMPORTANT: Make sure you only import functions as per requirements.
+# This default set is all that is required for 99% of transforms.
+
+import hashlib  
+import json  
+from datetime import datetime  
+
+from pyspark.sql import types as T  
+from pyspark.sql import functions as F  
+from pyspark.sql import DataFrame, Column  
+from pyspark.sql.utils import AnalysisException
+from pyspark.sql.window import Window
+from py4j.protocol import Py4JJavaError
+
+from typing import List, Dict, Any, Optional 
+from data_toolkit import cde_record
+from data_toolkit import transform_helpers
+from data_toolkit.config import RecordTypes, TransformJobConfig
+from data_toolkit.schema_mapping import MappingConfig, SchemaMapping
+from data_toolkit.s3_helpers import S3Utils 
+from pydantic import BaseModel, root_validator  "
+"In Lexer OpsData Pyspark transform codes, Load all spark and dbutils module in Lexer DataOps transform",,"dbutils, spark = get_modules()"
+"In Lexer OpsData Pyspark transform codes,, Create a job initialization class for Lexer DataOps transform called HackoweenJobConfig. The class will inherit from TransformJobConfig, these are the mandatory parameters: region, bucket, export_bucket, client, dataset_id, file_days_ago and load_style. The mandatory parameter will be a string type. Other parameters can be optional. The purpose of this class is to store config parameters for Lexer DataOps transform",HackoweenJobConfig,"class HackoweenJobConfig(TransformJobConfig):
+    # These are mandatory parameters. Don't pass a default value to them
+    # Define the types using the sticky pydantic widget at the to top of the notebook.
+    region: str 
+    bucket: str 
+    export_bucket: str
+    client: str 
+    dataset_id: str
+    file_days_ago: Optional[int] = 2
+    load_style: Optional[str]
+"
+"In Lexer OpsData Pyspark transform codes, create a Config instance from dbutils using HackoweenJobConfig job initialization class",,Config=HackoweenJobConfig.from_dbutils(dbutils) 
+"In Lexer OpsData Pyspark transform codes, print all config in the Config instance",,"for config in Config:
+    print(config)"
+"In Lexer OpsData Pyspark transform codes, create a customer schema in consisting of all attributes needed from the Customer API. The attibute type will be string and it can be a Null value","email	
+email_sha256	
+mobile	
+first_name	
+last_name	
+full_name	
+gender	
+customer_id	
+communication_opt_in	
+date_of_birth	
+birth_month	
+birth_day	
+birth_year	
+country	
+state	
+city	
+postcode	
+zip	
+employee_flag	
+customer_type	
+address_1	
+address_2","customer_schema = T.StructType([
+    T.StructField(""email"", StringType(), True),
+    T.StructField(""email_sha256"", StringType(), True),
+    T.StructField(""mobile"", StringType(), True),
+    T.StructField(""first_name"", StringType(), True),
+    T.StructField(""last_name"", StringType(), True),
+    T.StructField(""full_name"", StringType(), True),
+    T.StructField(""gender"", StringType(), True),
+    T.StructField(""customer_id"", StringType(), True),
+    T.StructField(""communication_opt_in"", StringType(), True),
+    T.StructField(""date_of_birth"", StringType(), True),  
+    T.StructField(""birth_month"", IntegerType(), True),
+    T.StructField(""birth_day"", IntegerType(), True),
+    T.StructField(""birth_year"", IntegerType(), True),
+    T.StructField(""country"", StringType(), True),
+    T.StructField(""state"", StringType(), True),
+    T.StructField(""city"", StringType(), True),
+    T.StructField(""postcode"", StringType(), True),
+    T.StructField(""zip"", StringType(), True),
+    T.StructField(""employee_flag"", StringType(), True),
+    T.StructField(""customer_type"", StringType(), True),
+    T.StructField(""address_1"", StringType(), True),
+    T.StructField(""address_2"", StringType(), True)
+])"
+"In Lexer OpsData Pyspark transform codes, load all SFTP JSON file that has a file pattern from the S3 bucket. SFTP files means files that are always in /imports and the file pattern is always /imports/{year}/{month}/{date}/ ",*_user.json,"customer_source = spark.read.format(""json"").load(f""s3://{Configs.bucket}/imports/*/*/*/*_user.json"")"
+"In Lexer OpsData Pyspark transform codes, if Configs.load_style == ""HISTORIC"", we load all available SFTP files for files",*_user.json,"if Configs.load_style == ""HISTORIC"":
+  customer_source = spark.read.format(""json"").load(f""s3://{Configs.bucket}/imports/*/*/*/*_user.json"")"
+"In Lexer OpsData Pyspark transform codes, this is non-historic load when we load SFTP files using Configs.file_days_ago",*_user.json,"customer_source = spark.read.format(""json"").load([f""{path}*_user.json"" for path in Configs.latest_avail_dirs(Configs.file_days_ago) if S3Utils.path_exists(f""{path}*_user.json"")], schema=customer_schema)"
+"In Lexer OpsData Pyspark transform codes, use ""path_exists"" function from data_toolkit to check if ""{path}*_user.json"" exists in the S3 bucket",*_user.json,"from data_toolkit.s3_helpers import S3Utils S3Utils.path_exists(f""{path}*_user.json"")"
+"In Lexer OpsData Pyspark transform codes, check if load_style is historic. If yes, read all SFTP file",*_user.json,"if Configs.load_style == ""HISTORIC"":
+  customer_source = spark.read.format(""json"").load(f""s3://{Configs.bucket}/imports/*/*/*/*_user.json"")"
+"In Lexer OpsData Pyspark transform codes, for any Lexer DataOps transform, we always do this. We first check if Config.load_style == ""HISTORIC"", if true, we load all SFTP files. Otherwise, we only load the most recent files using file_days_ago",*_user.json,"if Configs.load_style == ""HISTORIC"":
+  customer_src = spark.read.format(""json"").load(f""s3://{Configs.bucket}/imports/*/*/*/*_user.json"")
+
+else:
+  customer_src = spark.read.format(""json"").load([f""{path}*_user.json"" for path in Configs.latest_avail_dirs(Configs.file_days_ago) if S3Utils.path_exists(f""{path}*_user.json"")], schema=customer_schema)
+"
+"In Lexer OpsData Pyspark transform codes, load all SFTP CSV file that has a file pattern from the S3 bucket. SFTP files means files that are always in /imports and the file pattern is always /imports/{year}/{month}/{date}/ ",*_user.csv,"customer_source = spark.read.format(""csv"").load(f""s3://{Configs.bucket}/imports/*/*/*/*_user.csv"")"
+"In Lexer OpsData Pyspark transform codes, if Configs.load_style == ""HISTORIC"", we load all available SFTP files for files",*_user.csv,"if Configs.load_style == ""HISTORIC"":
+  customer_source = spark.read.format(""csv"").load(f""s3://{Configs.bucket}/imports/*/*/*/*_user.csv"")"
+"In Lexer OpsData Pyspark transform codes, check if load_style is historic. If yes, read all SFTP file",*_user.csv,"if Configs.load_style == ""HISTORIC"":
+  customer_source = spark.read.format(""csv"").load(f""s3://{Configs.bucket}/imports/*/*/*/*_user.csv"")"
+"In Lexer OpsData Pyspark transform codes, This is non-historic load when we load SFTP files using Configs.file_days_ago",*_user.csv,"customer_source = spark.read.format(""csv"").load([f""{path}*_user.csv"" for path in Configs.latest_avail_dirs(Configs.file_days_ago) if S3Utils.path_exists(f""{path}*_user.csv"")], schema=customer_schema)"
+"In Lexer OpsData Pyspark transform codes, Use ""path_exists"" function from data_toolkit to check if ""{path}*_user.json"" exists in the S3 bucket",*_user.csv,"from data_toolkit.s3_helpers import S3Utils S3Utils.path_exists(f""{path}*_user.csv"")"
+"In Lexer OpsData Pyspark transform codes, For any Lexer DataOps transform, we always do this. We first check if Config.load_style == ""HISTORIC"", if true, we load all SFTP files. Otherwise, we only load the most recent files using file_days_ago",*_user.csv,"if Configs.load_style == ""HISTORIC"":
+  customer_src = spark.read.format(""csv"").load(f""s3://{Configs.bucket}/imports/*/*/*/*_user.csv"")
+
+else:
+  customer_src = spark.read.format(""csv"").load([f""{path}*_user.csv"" for path in Configs.latest_avail_dirs(Configs.file_days_ago) if S3Utils.path_exists(f""{path}*_user.csv"")], schema=customer_schema)
+"
+"In Lexer OpsData Pyspark transform codes, Create filter_most_recent() function. This function takes in a source dataframe, columns that are going to be filered, a date pattern, order_by column which defaults to file_dare, and a test boolean. The purpose of this function is get the latest row based on order_by column. This function use a window function that is partitioned by a list of column",,"def filter_most_recent(source: DataFrame, filter_cols: List[Column],date_pattern:str, order_by:Column=""file_date"", test=False) -> DataFrame:      
+    df=(
+        add_input_file_date(source,date_pattern)
+        # Add a row number to each record based on the filter cols & file date
+        .withColumn(
+            ""row_number"",
+            F.row_number().over(
+                Window.partitionBy(filter_cols).orderBy(F.desc(order_by))
+            ),
+        )
+        # Keep only the 1st record that appeared in each file
+        .filter(F.col(""row_number"") == 1)
+        .drop(""file_date"", ""row_number"")
+    )
+    
+    if test:
+        print('before:',source.count())
+        print('after:', df.count())      
+    return df"
+"In Lexer OpsData Pyspark transform codes, Create filter_most_recent() function. ",,"def filter_most_recent(source: DataFrame, filter_cols: List[Column],date_pattern:str, order_by:Column=""file_date"", test=False) -> DataFrame:      
+    df=(
+        add_input_file_date(source,date_pattern)
+        # Add a row number to each record based on the filter cols & file date
+        .withColumn(
+            ""row_number"",
+            F.row_number().over(
+                Window.partitionBy(filter_cols).orderBy(F.desc(order_by))
+            ),
+        )
+        # Keep only the 1st record that appeared in each file
+        .filter(F.col(""row_number"") == 1)
+        .drop(""file_date"", ""row_number"")
+    )
+    
+    if test:
+        print('before:',source.count())
+        print('after:', df.count())      
+    return df"
+"In Lexer OpsData Pyspark transform codes, Create add_input_file_date() function. This function has a source dataframe, date_pattern, and col_name as the parameters. It will add a column called file_date to the dataframe to get the date of the file on the s3 directory using regex_extract function",,"# Low level helper to add a input data column.
+def add_input_file_date(source: DataFrame, date_pattern:str, col_name:str=""file_date"") -> DataFrame:
+    return (
+        source.withColumn(
+            col_name,
+            F.regexp_extract(
+                F.input_file_name(),
+                date_pattern,
+                1,
+            ),
+        )
+    )"
+"In Lexer OpsData Pyspark transform codes, Create filter_most_recent() function. ",,"def filter_most_recent(source: DataFrame, filter_cols: List[Column],date_pattern:str, order_by:Column=""file_date"", test=False) -> DataFrame:      
+    df=(
+        add_input_file_date(source,date_pattern)
+        # Add a row number to each record based on the filter cols & file date
+        .withColumn(
+            ""row_number"",
+            F.row_number().over(
+                Window.partitionBy(filter_cols).orderBy(F.desc(order_by))
+            ),
+        )
+        # Keep only the 1st record that appeared in each file
+        .filter(F.col(""row_number"") == 1)
+        .drop(""file_date"", ""row_number"")
+    )
+    
+    if test:
+        print('before:',source.count())
+        print('after:', df.count())      
+    return df"
+"In Lexer OpsData Pyspark transform codes, Load to delta table from a the persist table directory in client's bucket in S3 ",customers_persist,"customer_persist = spark.read.load(f""s3://{Config.bucket}/persist/customers_persist"")"
+"In Lexer OpsData Pyspark transform codes, Write dataframe to persist table using data toolkit's overwrite_persist function. This function can be found through Config instance. First argument is the input dataframe and second argument is the name of table. ",customers_persist,"Config.overwrite_persist(customers_persist, ""customers_persist"")"
+"In Lexer OpsData Pyspark transform codes, write persist table using data toolkit's overwrite_persist function ",customers_persist,"Config.overwrite_persist(customers_persist, ""customers_persist"")"
+Write persist table using data toolkit's overwrite_persist function ,customers_persist,"Config.overwrite_persist(customers_persist, ""customers_persist"")"
+"In Lexer OpsData Pyspark transform codes, Create function get_validated_email(). This function takes a column and use regex to identify the right email pattern. It will return Null if emaili is incorrect",email,"def get_validated_email(email:Column) -> Column:
+  """"""This function is used to validate and format email column.
+  """"""
+  regex = ""^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"" #regex to find the right email pattern, also used by CDE
+  
+  email_column = F.lower(F.trim(email))
+
+  valid_emails = email_column.rlike(regex) 
+  return (
+    (F.when(valid_emails, email_column).otherwise(F.lit(None)))
+  )"
+"In Lexer OpsData Pyspark transform codes, Create get_validated_year_of_birth() function. This function takes a year column that is the length of 4 and accepts year later than 1900 until the current year. Cast the result as integer. It will return Null for invalid year",yob,"def get_validated_year_of_birth(yob:Column) -> Column:
+  """"""This function is used to validate and format year of birth column.
+  """"""
+  yob = F.when(yob.rlike(""\d{4}""), yob).otherwise(F.lit(None))
+  yob = F.when((yob >= 1900) & (yob <= F.year(F.current_date())), yob).otherwise(F.lit(None))
+  yob = yob.cast(""int"")
+  return yob"
+"In Lexer OpsData Pyspark transform codes, Create a python user define function called format_aus_mobile(). This function accepts mobile column and imports formatter library and returns a formated mobile number",mobile,"# mobile formatting udf
+# TODO: rewrite the identity_etl_data_types formatters in a pyspark compatible way
+@udf(returnType=T.StringType())  # type: ignore
+def format_aus_mobile(raw_mobile):
+    from identity_etl_data_types import formatter  # type: ignore
+
+    mobile_formatter = formatter.get_formatter(""mobile"")
+    return mobile_formatter.format(raw_mobile)"
+"In Lexer OpsData Pyspark transform codes, Create map_gender() function to change M to Male and F to Female. This function takes gender column and map its value",gender,"def map_gender(gender):
+    return when(gender == 'M', 'Male').when(gender == 'F', 'Female').otherwise(gender)"
+"In Lexer OpsData Pyspark transform codes, Create map_gender() function to change Male to M and Female to F. This function takes gender column and map its value",gender,"def map_gender(gender):
+    return when(gender == 'Male', 'M').when(gender == 'Female', 'F').otherwise(gender)"
+"In Lexer OpsData Pyspark transform codes, Validate email column using get_validated_email() function. This replace the current email column",email,"customer_persist  = customer_persist.withColumn(""email"", get_validated_email(""email""))"
+"In Lexer OpsData Pyspark transform codes, Validate yob column using get_validated_birth() function. This replace the current yob column",yob,"customer_persist = customer_persist.withColumn(""yob"", get_validated_year_of_birth(""yob""))"
+"In Lexer OpsData Pyspark transform codes, Validate mobile column using format_aus_mobile() function. This replace the current mobile column",mobile,"customer_persist  = customer_persist.withColumn(""mobile"", format_aus_mobile(""mobile""))"
+"In Lexer OpsData Pyspark transform codes, Persist customer_source using filter_most_recent() function based on input column",email,"customer_persist = filter_most_recent(source= customer_source, 
+                                  filter_cols= ""email"",
+                                  date_pattern=r""\/imports\/(\d{4}\/\d{2}\/\d{2})"")"
+persist customer source using filter_most_recent function on email,"customer source, email","customer_persist = filter_most_recent(source= customer_source, 
+                                  filter_cols= ""email"",
+                                  date_pattern=r""\/imports\/(\d{4}\/\d{2}\/\d{2})"")"
+"In Lexer OpsData Pyspark transform codes, Persist customer_source using filter_most_recent() function based on input column",customer_id,"customer_persist = filter_most_recent(source= customer_source, 
+                                  filter_cols= ""customer_id"",
+                                  date_pattern=r""\/imports\/(\d{4}\/\d{2}\/\d{2})"")"
+persist customer source using filter_most_recent function on customer_id,"customer source, customer_id","customer_persist = filter_most_recent(source= customer_source, 
+                                  filter_cols= ""customer_id"",
+                                  date_pattern=r""\/imports\/(\d{4}\/\d{2}\/\d{2})"")"
+"In Lexer OpsData Pyspark transform codes, Persist customer_source using filter_most_recent() function based on input column",email and customer_id,"customer_persist = filter_most_recent(source= customer_source, 
+                                  filter_cols= [""email"", ""customer_id""],
+                                  date_pattern=r""\/imports\/(\d{4}\/\d{2}\/\d{2})"")"
+"In Lexer OpsData Pyspark transform codes, Persist customer_source using filter_most_recent() function based on input column",customer_id and email,"customer_persist = filter_most_recent(source= customer_source, 
+                                  filter_cols= [""customer_id"", ""email""],
+                                  date_pattern=r""\/imports\/(\d{4}\/\d{2}\/\d{2})"")"
+"In Lexer OpsData Pyspark transform codes, Cast input column as string. This replace the current input column",age,"customer_persist = customer_persist.withColumn(""age"", F.col(""age"").cast(""string""))"
+"In Lexer OpsData Pyspark transform codes, Cast input column as integer. This replace the current input column",age,"customer_persist = customer_persist.withColumn(""age"", F.col(""age"").cast(""int""))"
+"In Lexer OpsData Pyspark transform codes, Cast input column as float. This replace the current input column",age,"customer_persist = customer_persist.withColumn(""age"", F.col(""age"").cast(""float""))"
+"In Lexer OpsData Pyspark transform codes, Cast input column as timestamp. This replace the current input column",date,"customer_persist = customer_persist.withColumn(""date"", F.to_timestamp(F.col(""date"")))"
+"In Lexer OpsData Pyspark transform codes, Remove rows from dataframe value in email column where value is null ",email,"customer_persist = (
+    customer_persist
+    .where(F.col(""email"").isNotNull())
+  )
+  "
+"In Lexer OpsData Pyspark transform codes, Remove rows from dataframe value in mobile column where value is null",mobile,"customer_persist = (
+    customer_persist
+    .where(F.col(""mobile"").isNotNull())
+  )"
+"In Lexer OpsData Pyspark transform codes, Remove rows from dataframe value in customer_id column where value is null",customer_id,"customer_persist = (
+    customer_persist
+    .where(F.col(""customer_id"").isNotNull())
+  )"
+"In Lexer OpsData Pyspark transform codes, Create customer schema mapping named MAPPING_CONFIG in the form of dict. This consist of customer and customer_link key. Customer key is a dict to mapping of attribute name in the dataframe (on the right) to Customer API's attibute name (on the left). If there is no column to map to the key, then set the value to Null. Customer_link is list of strings containing the links of the customer. This MAPPING_CONFIG will later be used in the initalisation of SchemaMapping class. ","email	
+email_sha256	
+mobile	
+first_name	
+last_name	
+full_name	
+gender	
+customer_id	
+communication_opt_in	
+date_of_birth	
+birth_month	
+birth_day	
+birth_year	
+country	
+state	
+city	
+postcode	
+zip	
+employee_flag	
+customer_type	
+address_1	
+address_2"," MAPPING_CONFIG = {
+  ""customers"": {
+    ""email"": ""email"",
+    ""mobile"": ""mobile"",
+    ""first_name"":""first_name"",
+    ""last_name"": ""last_name"",
+    ""full_name"": ""full_name"",
+    ""gender"": ""gender"",
+    ""customer_id"": ""customer_id"",
+    ""communication_opt_in"": ""communication_opt_in"",
+    ""date_of_birth"": ""date_of_birth"",
+    ""birth_month"":""birth_month"",
+    ""birth_day"": ""birth_day"",
+    ""birth_year"": ""birth_year"",
+    ""country"": ""country"",
+    ""state"": ""state"",
+    ""city"": ""city"",
+    ""postcode"": ""postcode"",
+    ""zip"": ""zip"",
+    ""customer_type"": ""customer_type"",
+    ""address_1"": ""address_1"",
+    ""address_2"": ""address_2""
+  },
+  ""customer_link"": [""email""]
+}"
+"In Lexer OpsData Pyspark transform codes, Select all the required attributes from customer dataframe for it to be map using Customer API. The name of the attributes has to be the same as the right side of the attributes in MAPPING_CONFIG. communication_opt_in and employee_flag should be boolean type. Birth_month, birth_year, and birth_date should integer and the rest of the attributes is string type.","email        
+email_sha256        
+mobile        
+first_name        
+last_name        
+full_name        
+gender        
+customer_id        
+communication_opt_in        
+date_of_birth        
+birth_month        
+birth_day        
+birth_year        
+country        
+state        
+city        
+postcode        
+zip        
+employee_flag        
+customer_type        
+address_1        
+address_2","customer_fit = customer_fit.select(
+    ""email"", 
+    ""email_sha256"", 
+    ""mobile"", 
+    ""first_name"",
+    ""last_name"", 
+    ""full_name"", 
+    ""gender"", 
+    ""customer_id"",
+    ""communication_opt_in"", 
+    ""date_of_birth"", 
+    ""birth_month"", 
+    ""birth_day"", 
+    ""birth_year"", 
+    ""country"", 
+    ""state"",
+    ""city"", 
+    ""postcode"", 
+    ""zip"", 
+    ""employee_flag"",
+    ""customer_type"", 
+    ""address_1"", 
+    ""address_2""
+)"
+"In Lexer OpsData Pyspark transform codes, select all customer attributes",,"customer_fit = customer_fit.select(
+    ""email"", 
+    ""email_sha256"", 
+    ""mobile"", 
+    ""first_name"",
+    ""last_name"", 
+    ""full_name"", 
+    ""gender"", 
+    ""customer_id"",
+    ""communication_opt_in"", 
+    ""date_of_birth"", 
+    ""birth_month"", 
+    ""birth_day"", 
+    ""birth_year"", 
+    ""country"", 
+    ""state"",
+    ""city"", 
+    ""postcode"", 
+    ""zip"", 
+    ""employee_flag"",
+    ""customer_type"", 
+    ""address_1"", 
+    ""address_2""
+)"
+"In Lexer OpsData Pyspark transform codes, Create SchemaMapping instance for customer data using customer_fit as customer_table input and MAPPING_CONFIG as mapping_configs paramter. ",customer_fit,"MyMapping = SchemaMapping(
+  customers_table = customer_fit,
+  mapping_configs = MappingConfig(**MAPPING_CONFIG) 
+  )"
+"In Lexer OpsData Pyspark transform codes, Create SchemaMapping instance",customer_fit,"MyMapping = SchemaMapping(
+  customers_table = customer_fit,
+  mapping_configs = MappingConfig(**MAPPING_CONFIG) 
+  )"
+"In Lexer OpsData Pyspark transform codes, Initialise customer mapping by using the function mapping_customers() on MyMapping instance  ",,customers_fit = MyMapping.mapping_customers()
+"In Lexer OpsData Pyspark transform codes, Initialise customer mapping by using MyMapping instance  ",,customers_fit = MyMapping.mapping_customers()
+"In Lexer OpsData Pyspark transform codes, Initialise customer mapping by using the function mapping_customers() on MyMapping instance and only retrieve the rows where the column link has a value. The link column cannot be null before the standard exit code in Lexer DataOps transform",,"customers_fit = MyMapping.mapping_customers().where(F.col(""link"").isNotNull())"
+"In Lexer OpsData Pyspark transform codes, Standard code to exit the Lexer DataOps transform where we only export customer_record",customer_fit,"Config.notebook_exit(RecordTypes(
+        customer_record = customer_fit
+    )
+)"
+"In Lexer OpsData Pyspark transform codes, write a code to exit notebook",customer_fit,"Config.notebook_exit(RecordTypes(
+        customer_record = customer_fit
+    )
+)"
